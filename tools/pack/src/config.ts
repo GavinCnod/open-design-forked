@@ -14,15 +14,23 @@ const ENTRY_DIR_NAME = path.basename(__dirname);
 
 export const WORKSPACE_ROOT = resolve(__dirname, ENTRY_DIR_NAME === "dist" ? "../../.." : "../../..");
 
-export type ToolPackPlatform = "mac";
-export type ToolPackBuildOutput = "all" | "app" | "dmg" | "zip";
+export type ToolPackPlatform = "mac" | "win" | "linux";
+export type ToolPackBuildOutput = "all" | "app" | "appimage" | "dir" | "dmg" | "nsis" | "zip";
 
 export type ToolPackCliOptions = {
+  containerized?: boolean;
   dir?: string;
+  expr?: string;
   json?: boolean;
   namespace?: string;
+  path?: string;
   portable?: boolean;
+  removeData?: boolean;
+  removeLogs?: boolean;
+  removeProductUserData?: boolean;
+  removeSidecars?: boolean;
   signed?: boolean;
+  silent?: boolean;
   to?: string;
 };
 
@@ -41,22 +49,30 @@ export type ToolPackRoots = {
 };
 
 export type ToolPackConfig = {
+  containerized: boolean;
   electronBuilderCliPath: string;
   electronDistPath: string;
   electronVersion: string;
   namespace: string;
   platform: ToolPackPlatform;
   portable: boolean;
+  removeData: boolean;
+  removeLogs: boolean;
+  removeProductUserData: boolean;
+  removeSidecars: boolean;
   roots: ToolPackRoots;
+  silent: boolean;
   signed: boolean;
   to: ToolPackBuildOutput;
   workspaceRoot: string;
 };
 
-function resolveToolPackBuildOutput(value: string | undefined): ToolPackBuildOutput {
-  if (value == null || value.length === 0) return "all";
-  if (value === "all" || value === "app" || value === "dmg" || value === "zip") return value;
-  throw new Error(`unsupported mac --to target: ${value}`);
+function resolveToolPackBuildOutput(platform: ToolPackPlatform, value: string | undefined): ToolPackBuildOutput {
+  if (value == null || value.length === 0) return platform === "win" ? "nsis" : "all";
+  if (platform === "mac" && (value === "all" || value === "app" || value === "dmg" || value === "zip")) return value;
+  if (platform === "win" && (value === "all" || value === "dir" || value === "nsis")) return value;
+  if (platform === "linux" && (value === "all" || value === "appimage" || value === "dir")) return value;
+  throw new Error(`unsupported ${platform} --to target: ${value}`);
 }
 
 function resolveElectronVersion(workspaceRoot: string): string {
@@ -98,6 +114,7 @@ export function resolveToolPackConfig(
   const runtimeNamespaceBaseRoot = join(toolPackRoot, "runtime", platform, "namespaces");
 
   return {
+    containerized: options.containerized === true,
     electronBuilderCliPath: resolveElectronBuilderCliPath(),
     electronDistPath: resolveElectronDistPath(WORKSPACE_ROOT),
     electronVersion: resolveElectronVersion(WORKSPACE_ROOT),
@@ -117,8 +134,13 @@ export function resolveToolPackConfig(
       },
       toolPackRoot,
     },
+    removeData: options.removeData === true,
+    removeLogs: options.removeLogs === true,
+    removeProductUserData: options.removeProductUserData === true,
+    removeSidecars: options.removeSidecars === true,
+    silent: options.silent !== false,
     signed: options.signed === true,
-    to: resolveToolPackBuildOutput(options.to),
+    to: resolveToolPackBuildOutput(platform, options.to),
     workspaceRoot: WORKSPACE_ROOT,
   };
 }

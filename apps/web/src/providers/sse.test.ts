@@ -125,7 +125,7 @@ describe('streamViaDaemon', () => {
   it('keeps the daemon run alive when the browser-side stream aborts', async () => {
     const handlers = createDaemonHandlers();
     const controller = new AbortController();
-    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, _init?: RequestInit) => {
       const url = String(input);
       if (url === '/api/runs') return jsonResponse({ runId: 'run-1' });
       if (url === '/api/runs/run-1/events') {
@@ -420,6 +420,52 @@ describe('streamViaDaemon', () => {
     expect(handlers.onError).toHaveBeenCalledWith(new Error('daemon stream disconnected before run completed'));
     expect(handlers.onDone).not.toHaveBeenCalled();
   });
+
+  it('includes selected preview comments without requiring visible draft text', async () => {
+    const handlers = createDaemonHandlers();
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === '/api/runs') return jsonResponse({ runId: 'run-1' });
+      if (url === '/api/runs/run-1/events') {
+        return sseResponse('event: end\ndata: {"code":0,"status":"succeeded"}\n\n');
+      }
+      throw new Error(`unexpected fetch ${url}`);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    await streamViaDaemon({
+      agentId: 'mock',
+      history: [{ id: '1', role: 'user', content: '' }],
+      systemPrompt: '',
+      signal: new AbortController().signal,
+      handlers,
+      commentAttachments: [
+        {
+          id: 'c1',
+          order: 1,
+          filePath: 'index.html',
+          elementId: 'hero-title',
+          selector: '[data-od-id="hero-title"]',
+          label: 'h1.hero-title',
+          comment: 'Shorten the headline',
+          currentText: 'A very long headline',
+          pagePosition: { x: 12, y: 44, width: 500, height: 60 },
+          htmlHint: '<h1 data-od-id="hero-title">',
+        },
+      ],
+    });
+
+    const [, createRunInit] = fetchMock.mock.calls[0] as unknown as [RequestInfo | URL, RequestInit];
+    const body = JSON.parse(String(createRunInit.body));
+    expect(body.message).toBe('## user\n');
+    expect(body.commentAttachments).toEqual([
+      expect.objectContaining({
+        id: 'c1',
+        elementId: 'hero-title',
+        comment: 'Shorten the headline',
+      }),
+    ]);
+  });
 });
 
 describe('streamMessageOpenAI', () => {
@@ -464,6 +510,43 @@ describe('streamMessageOpenAI', () => {
     expect(handlers.onDelta).toHaveBeenCalledTimes(1);
     expect(handlers.onDelta).toHaveBeenCalledWith('hi');
     expect(handlers.onError).not.toHaveBeenCalled();
+    expect(handlers.onDone).toHaveBeenCalledWith('hi');
+  });
+
+  it('routes through the OpenAI-specific proxy endpoint and handles CRLF frames', async () => {
+    const handlers = createStreamHandlers();
+    const fetchMock = vi.fn(async () =>
+      sseResponse(
+        [
+          'event: delta',
+          'data: {"delta":"hi"}',
+          '',
+          'event: end',
+          'data: {}',
+          '',
+        ].join('\r\n'),
+      ),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    await streamMessageOpenAI(
+      {
+        mode: 'api',
+        apiKey: 'test-key',
+        baseUrl: 'https://example.test',
+        model: 'gpt-test',
+        agentId: null,
+        skillId: null,
+        designSystemId: null,
+      },
+      '',
+      [{ id: '1', role: 'user', content: 'hello' }],
+      new AbortController().signal,
+      handlers,
+    );
+
+    expect(fetchMock).toHaveBeenCalledWith('/api/proxy/openai/stream', expect.any(Object));
+    expect(handlers.onDelta).toHaveBeenCalledWith('hi');
     expect(handlers.onDone).toHaveBeenCalledWith('hi');
   });
 });

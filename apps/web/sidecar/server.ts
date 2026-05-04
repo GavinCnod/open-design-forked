@@ -26,7 +26,11 @@ import {
   type SidecarRuntimeContext,
 } from "@open-design/sidecar";
 
-const HOST = "127.0.0.1";
+const HOST = process.env.OD_HOST || "127.0.0.1";
+if (process.env.OD_HOST != null && !/^[a-zA-Z0-9._\-:[\]@]+$/.test(process.env.OD_HOST)) {
+  throw new Error(`OD_HOST contains invalid characters: ${process.env.OD_HOST}`);
+}
+const DAEMON_HOST = "127.0.0.1";
 const DAEMON_PORT_ENV = SIDECAR_ENV.DAEMON_PORT;
 const WEB_PORT_ENV = SIDECAR_ENV.WEB_PORT;
 const TOOLS_DEV_PARENT_PID_ENV = SIDECAR_ENV.TOOLS_DEV_PARENT_PID;
@@ -75,7 +79,7 @@ function parsePort(value: string | undefined): number {
 
 function resolveDaemonOrigin(): string | null {
   const port = parsePort(process.env[DAEMON_PORT_ENV]);
-  return port === 0 ? null : `http://${HOST}:${port}`;
+  return port === 0 ? null : `http://${DAEMON_HOST}:${port}`;
 }
 
 function isDaemonProxyPathname(pathname: string): boolean {
@@ -107,13 +111,40 @@ export function resolveDaemonProxyTarget(
   return new URL(`${parsedRequestUrl.pathname}${parsedRequestUrl.search}`, daemonOrigin);
 }
 
+export function normalizeDaemonProxyOriginHeader(options: {
+  daemonOrigin: string;
+  origin: string | undefined;
+  webPort: number;
+}): string | undefined {
+  if (options.origin == null || options.origin.length === 0) return options.origin;
+
+  const schemes = ["http", "https"];
+  const loopbackHosts = ["127.0.0.1", "localhost", "[::1]", HOST];
+  const allowedWebOrigins = new Set(
+    schemes.flatMap((scheme) => loopbackHosts.map((host) => `${scheme}://${host}:${options.webPort}`)),
+  );
+
+  return allowedWebOrigins.has(options.origin) ? options.daemonOrigin : options.origin;
+}
+
 async function proxyToDaemon(
   target: URL,
   request: IncomingMessage,
   response: ServerResponse,
+  webPort: number,
 ): Promise<void> {
   const proxyRequestFactory = target.protocol === "https:" ? createHttpsRequest : createHttpRequest;
   const headers = { ...request.headers, host: target.host };
+  const origin = normalizeDaemonProxyOriginHeader({
+    daemonOrigin: target.origin,
+    origin: typeof request.headers.origin === "string" ? request.headers.origin : undefined,
+    webPort,
+  });
+  if (origin == null || origin.length === 0) {
+    delete headers.origin;
+  } else {
+    headers.origin = origin;
+  }
 
   await new Promise<void>((resolveProxy) => {
     const proxyRequest = proxyRequestFactory(
@@ -224,15 +255,16 @@ function attachParentMonitor(stop: () => Promise<void>): void {
 
 export async function startWebSidecar(runtime: SidecarRuntimeContext<SidecarStamp>): Promise<WebSidecarHandle> {
   const dir = resolveWebRoot();
-  const app = createNextServer({ dev: runtime.mode === "dev", dir });
+  const app = createNextServer({ dev: process.env.OD_WEB_PROD !== "1" && runtime.mode === "dev", dir });
   await prepareNextApp(app, dir);
 
   const daemonOrigin = resolveDaemonOrigin();
   const handleRequest = app.getRequestHandler();
+  let webPort = 0;
   const httpServer = createHttpServer((request, response) => {
     const daemonProxyTarget = daemonOrigin == null ? null : resolveDaemonProxyTarget(daemonOrigin, request.url);
     if (daemonProxyTarget != null) {
-      void proxyToDaemon(daemonProxyTarget, request, response).catch((error: unknown) => {
+      void proxyToDaemon(daemonProxyTarget, request, response, webPort).catch((error: unknown) => {
         response.statusCode = 502;
         response.end(error instanceof Error ? error.message : String(error));
       });
@@ -245,6 +277,7 @@ export async function startWebSidecar(runtime: SidecarRuntimeContext<SidecarStam
     });
   });
   const port = await listen(httpServer, parsePort(process.env[WEB_PORT_ENV]));
+  webPort = port;
   const state: WebStatusSnapshot = {
     pid: process.pid,
     state: "running",

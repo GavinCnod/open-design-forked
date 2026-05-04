@@ -27,7 +27,7 @@ import {
 } from "@open-design/platform";
 
 import type { ToolPackBuildOutput, ToolPackConfig } from "./config.js";
-import { macResources } from "./resources.js";
+import { copyBundledResourceTrees, macResources } from "./resources.js";
 
 const execFileAsync = promisify(execFile);
 const PRODUCT_NAME = "Open Design";
@@ -263,14 +263,9 @@ async function copyResourceTree(config: ToolPackConfig, paths: MacPaths): Promis
   await rm(paths.resourceRoot, { force: true, recursive: true });
   await mkdir(paths.resourceRoot, { recursive: true });
 
-  await cp(join(config.workspaceRoot, "skills"), join(paths.resourceRoot, "skills"), {
-    recursive: true,
-  });
-  await cp(join(config.workspaceRoot, "design-systems"), join(paths.resourceRoot, "design-systems"), {
-    recursive: true,
-  });
-  await cp(join(config.workspaceRoot, "assets", "frames"), join(paths.resourceRoot, "frames"), {
-    recursive: true,
+  await copyBundledResourceTrees({
+    workspaceRoot: config.workspaceRoot,
+    resourceRoot: paths.resourceRoot,
   });
   await mkdir(join(paths.resourceRoot, "bin"), { recursive: true });
   await cp(process.execPath, join(paths.resourceRoot, "bin", "node"));
@@ -362,7 +357,9 @@ async function writeAssembledApp(
   await runNpmInstall(paths.assembledAppRoot);
 }
 
-function resolveElectronBuilderTargets(to: ToolPackBuildOutput): ElectronBuilderTarget[] {
+type MacBuildOutput = Extract<ToolPackBuildOutput, "all" | "app" | "dmg" | "zip">;
+
+function resolveElectronBuilderTargets(to: MacBuildOutput): ElectronBuilderTarget[] {
   switch (to) {
     case "app":
       return ["dir"];
@@ -388,7 +385,7 @@ async function runElectronBuilder(
     afterSign: config.signed ? macResources.notarizeHook : undefined,
     asar: false,
     buildDependenciesFromSource: false,
-    compression: "store",
+    compression: "maximum",
     directories: {
       output: paths.appBuilderOutputRoot,
     },
@@ -553,7 +550,7 @@ export async function packMac(config: ToolPackConfig): Promise<MacPackResult> {
   await copyResourceTree(config, paths);
   const tarballs = await collectWorkspaceTarballs(config, paths);
   await writeAssembledApp(config, paths, tarballs);
-  await runElectronBuilder(config, paths, resolveElectronBuilderTargets(config.to));
+  await runElectronBuilder(config, paths, resolveElectronBuilderTargets(config.to as MacBuildOutput));
   await clearQuarantine(paths.appPath);
   const artifacts = await finalizeMacArtifacts(config, paths);
 

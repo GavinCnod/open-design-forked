@@ -22,11 +22,13 @@ const isServerOutput = process.env.OD_WEB_OUTPUT_MODE === 'server';
 const shouldStaticExport = isProd && !isServerOutput;
 
 const WEB_ROOT = dirname(fileURLToPath(import.meta.url));
+const toPosixPath = (value: string) => value.replaceAll('\\', '/');
 
 function resolveDistDir(defaultValue: string) {
+  if (process.env.OD_WEB_PROD === '1') return defaultValue;
   const configured = process.env.OD_WEB_DIST_DIR;
   if (!configured) return defaultValue;
-  return isAbsolute(configured) ? relative(WEB_ROOT, configured) || '.' : configured;
+  return toPosixPath(isAbsolute(configured) ? relative(WEB_ROOT, configured) || '.' : configured);
 }
 
 const DIST_DIR = resolveDistDir(isProd ? (shouldStaticExport ? 'out' : '.next') : '.next');
@@ -38,7 +40,7 @@ const DIST_DIR = resolveDistDir(isProd ? (shouldStaticExport ? 'out' : '.next') 
 function resolveDevTsconfigPath() {
   const configured = process.env.OD_WEB_TSCONFIG_PATH;
   if (!configured) return undefined;
-  return isAbsolute(configured) ? (relative(WEB_ROOT, configured) || 'tsconfig.json').split('\\').join('/') : configured;
+  return toPosixPath(isAbsolute(configured) ? relative(WEB_ROOT, configured) || 'tsconfig.json' : configured);
 }
 
 const DEV_TSCONFIG_PATH = resolveDevTsconfigPath();
