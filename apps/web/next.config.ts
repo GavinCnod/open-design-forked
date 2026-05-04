@@ -1,3 +1,7 @@
+/**
+ * Web 运行时 Next.js 配置。
+ * 开发态下允许 tools-dev 注入临时构建目录和 tsconfig 路径，并保持 Windows 路径解析稳定。
+ */
 import type { NextConfig } from 'next';
 import { dirname, isAbsolute, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -27,10 +31,14 @@ function resolveDistDir(defaultValue: string) {
 
 const DIST_DIR = resolveDistDir(isProd ? (shouldStaticExport ? 'out' : '.next') : '.next');
 
+/**
+ * 解析开发态 tsconfig 路径。
+ * Next.js 这里按项目根解析 tsconfigPath，因此将绝对路径转换为相对 `apps/web` 的 POSIX 路径。
+ */
 function resolveDevTsconfigPath() {
   const configured = process.env.OD_WEB_TSCONFIG_PATH;
   if (!configured) return undefined;
-  return isAbsolute(configured) ? relative(WEB_ROOT, configured) || 'tsconfig.json' : configured;
+  return isAbsolute(configured) ? (relative(WEB_ROOT, configured) || 'tsconfig.json').split('\\').join('/') : configured;
 }
 
 const DEV_TSCONFIG_PATH = resolveDevTsconfigPath();

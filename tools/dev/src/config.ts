@@ -81,6 +81,14 @@ function resolveElectronBinaryPath(workspaceRoot: string): string {
   return require.resolve("electron/cli.js");
 }
 
+/**
+ * 解析 Web 开发态使用的临时 tsconfig 路径。
+ * 将文件放在 `apps/web` 项目目录内，避免 Next.js 在 Windows 下解析项目外 tsconfig 时出现路径拼接异常。
+ */
+function resolveWebDevTsconfigPath(workspaceRoot: string): string {
+  return path.join(workspaceRoot, "apps/web/.next/tools-dev/tsconfig.json");
+}
+
 function resolveAppConfig(options: {
   app: ToolDevAppName;
   namespace: string;
@@ -177,7 +185,7 @@ export function resolveToolDevConfig(options: ToolDevOptions = {}): ToolDevConfi
       web: {
         ...web,
         nextDistDir: resolveAppRuntimePath({ app: APP_KEYS.WEB, namespaceRoot, fileName: "next", contract: OPEN_DESIGN_SIDECAR_CONTRACT }),
-        nextTsconfigPath: resolveAppRuntimePath({ app: APP_KEYS.WEB, namespaceRoot, fileName: "tsconfig.json", contract: OPEN_DESIGN_SIDECAR_CONTRACT }),
+        nextTsconfigPath: resolveWebDevTsconfigPath(WORKSPACE_ROOT),
         sidecarEntryPath: path.join(WORKSPACE_ROOT, "apps/web/sidecar/index.ts"),
       },
     },

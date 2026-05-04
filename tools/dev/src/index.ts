@@ -479,12 +479,16 @@ async function ensureWebDevNodeModules(config: ToolDevConfig): Promise<void> {
   await symlink(webNodeModules, runtimeNodeModules, "dir");
 }
 
+/**
+ * 生成供 Next.js 开发态使用的临时 tsconfig。
+ * Windows 下需要将相对路径标准化为 `/`，避免 `extends` 在解析时把反斜杠路径视为异常路径。
+ */
 async function writeWebDevTsconfig(config: ToolDevConfig): Promise<void> {
   const webRoot = path.join(config.workspaceRoot, "apps/web");
   const tsconfigPath = config.apps.web.nextTsconfigPath;
   const tsconfigDir = path.dirname(tsconfigPath);
   const sourceTsconfig = path.join(webRoot, "tsconfig.json");
-  const relativeSourceTsconfig = path.relative(tsconfigDir, sourceTsconfig) || "./tsconfig.json";
+  const relativeSourceTsconfig = (path.relative(tsconfigDir, sourceTsconfig) || "./tsconfig.json").split(path.sep).join("/");
 
   await mkdir(tsconfigDir, { recursive: true });
   await writeFile(
