@@ -34,7 +34,6 @@ export type ToolDevOptions = {
   daemonPort?: number | string | null;
   json?: boolean;
   namespace?: string;
-  prod?: boolean;
   toolsDevRoot?: string;
   webPort?: number | string | null;
 };
@@ -170,7 +169,6 @@ export function resolveToolDevConfig(options: ToolDevOptions = {}): ToolDevConfi
   const desktop = resolveAppConfig({ app: APP_KEYS.DESKTOP, namespace, namespaceRoot, toolsDevRoot });
   const web = resolveAppConfig({ app: APP_KEYS.WEB, namespace, namespaceRoot, toolsDevRoot });
   const desktopPackageJsonPath = path.join(WORKSPACE_ROOT, "apps/desktop/package.json");
-  let cachedElectronBinaryPath: string | undefined;
 
   return {
     apps: {
@@ -180,10 +178,7 @@ export function resolveToolDevConfig(options: ToolDevOptions = {}): ToolDevConfi
       },
       desktop: {
         ...desktop,
-        get electronBinaryPath() {
-          if (cachedElectronBinaryPath == null) cachedElectronBinaryPath = resolveElectronBinaryPath(WORKSPACE_ROOT);
-          return cachedElectronBinaryPath;
-        },
+        electronBinaryPath: resolveElectronBinaryPath(WORKSPACE_ROOT),
         mainEntryPath: path.join(WORKSPACE_ROOT, "apps/desktop/dist/main/index.js"),
         packageJsonPath: desktopPackageJsonPath,
       },
